@@ -1,0 +1,83 @@
+# working rotor outer 
+import numpy as np
+import matplotlib.pyplot as plt
+from shapely.geometry import LinearRing
+import math
+
+pin_circle_radius = 50.0
+number_of_pins = 10
+pin_diameter = 5.0
+ecc_factor = 0.25
+samples = 4000
+
+rolling_circle_radius = pin_circle_radius / number_of_pins
+R = (number_of_pins - 1) * rolling_circle_radius
+E = ecc_factor * rolling_circle_radius
+Rr = pin_diameter / 2.0
+
+def rotor_param(R, E, Rr, N, t):
+    m = 1 - N
+    denom = (R / (E * N)) - np.cos(m * t)
+    safe_denom = np.where(np.abs(denom) < 1e-9, np.sign(denom) * 1e-9 + denom, denom)
+    ang = np.arctan2(np.sin(m * t), safe_denom)
+    x = R * np.cos(t) - Rr * np.cos(t + ang) - E * np.cos(N * t)
+    y = -R * np.sin(t) + Rr * np.sin(t + ang) + E * np.sin(N * t)
+    return x, y
+
+t_ext = np.linspace(np.deg2rad(-30.0), np.deg2rad(210.0), samples)
+x_ext, y_ext = rotor_param(R, E, Rr, number_of_pins, t_ext)
+
+crossings = np.where(np.diff(np.sign(y_ext)) != 0)[0]
+if len(crossings) >= 2:
+    start_idx = crossings[0]
+    end_idx = crossings[-1]
+else:
+    start_idx = 0
+    end_idx = len(t_ext) - 1
+
+half_x = x_ext[start_idx:end_idx + 1]
+half_y = y_ext[start_idx:end_idx + 1]
+half_pts = np.column_stack((half_x, half_y))
+mirrored_pts = np.column_stack((half_x[::-1], -half_y[::-1]))
+full_pts = np.vstack((half_pts, mirrored_pts[1:-1]))
+
+ring = LinearRing(full_pts)
+if not ring.is_ring:
+    full_pts = np.vstack((full_pts, full_pts[0]))
+
+radii = np.hypot(full_pts[:,0], full_pts[:,1])
+max_radius = float(np.max(radii))
+rotor_diameter = 2.0 * max_radius
+
+center_hole_d = 0.30 * rotor_diameter
+output_holes = max(1, number_of_pins - 1)
+output_hole_d = 0.10 * rotor_diameter
+output_bolt_radius = 0.50 * max_radius
+
+print(f"Rotor diameter: {rotor_diameter:.3f} mm")
+print(f"Center hole diameter: {center_hole_d:.3f} mm")
+print(f"Output holes: {output_holes} holes, {output_hole_d:.3f} mm diameter")
+print(f"Output bolt circle radius: {output_bolt_radius:.3f} mm")
+
+fig, ax = plt.subplots(figsize=(8,8))
+ax.set_aspect('equal', 'box')
+ax.axis('off')
+ax.plot(half_pts[:,0], half_pts[:,1], '-r', linewidth=1.5)
+ax.plot(mirrored_pts[:,0], mirrored_pts[:,1], '-r', linewidth=1.5)
+
+for ang_deg in np.linspace(0, 360, num=number_of_pins, endpoint=False):
+    a = math.radians(ang_deg)
+    px = pin_circle_radius * math.cos(a)
+    py = pin_circle_radius * math.sin(a)
+    ax.add_patch(plt.Circle((px, py), pin_diameter/2.0, fill=False, color='gray', linewidth=0.8))
+
+ax.add_patch(plt.Circle((0,0), center_hole_d/2.0, fill=False, color='blue', linewidth=1.0))
+for i in range(output_holes):
+    ang = 2.0 * math.pi * i / output_holes
+    ox = output_bolt_radius * math.cos(ang)
+    oy = output_bolt_radius * math.sin(ang)
+    ax.add_patch(plt.Circle((ox, oy), output_hole_d/2.0, fill=False, color='purple', linewidth=1.0))
+
+ax.plot([0],[0], marker='x', color='k')
+plt.legend(['Rotor'])
+plt.show()

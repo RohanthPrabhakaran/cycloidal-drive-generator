@@ -1,0 +1,47 @@
+import math
+import ezdxf
+import svgwrite
+
+# ======== USER PARAMETERS ========
+outer_diameter = 100.0     # mm (to pin centers)
+num_pins = 21
+ecc_factor = 0.25          # eccentricity as fraction of pitch (D/N)
+output_svg = "cycloidal_disk.svg"
+output_dxf = "cycloidal_disk.dxf"
+profile_points = 720       # smoothness
+# =================================
+
+# Derived parameters
+R = outer_diameter / 2.0                      # ring radius
+r = R / num_pins                              # rolling circle radius
+e = ecc_factor * (outer_diameter / num_pins)  # eccentricity
+
+# Generate profile points
+points = []
+for i in range(profile_points + 1):
+    t = 2.0 * math.pi * i / profile_points
+    x = (R - r) * math.cos(t) + e * math.cos(((R - r) / r) * t)
+    y = (R - r) * math.sin(t) - e * math.sin(((R - r) / r) * t)
+    points.append((x, y))
+
+# ----- Save as DXF -----
+doc = ezdxf.new(dxfversion="R2010")
+msp = doc.modelspace()
+for i in range(len(points) - 1):
+    msp.add_line(points[i], points[i+1])
+doc.saveas(output_dxf)
+print(f"DXF saved as {output_dxf}")
+
+# ----- Save as SVG -----
+dwg = svgwrite.Drawing(output_svg, profile='tiny')
+# Translate so profile is centered
+min_x = min(p[0] for p in points)
+max_x = max(p[0] for p in points)
+min_y = min(p[1] for p in points)
+max_y = max(p[1] for p in points)
+offset_x = -(min_x + max_x) / 2
+offset_y = -(min_y + max_y) / 2
+svg_points = [((x + offset_x), -(y + offset_y)) for x, y in points]
+dwg.add(dwg.polyline(points=svg_points, stroke='black', fill='none'))
+dwg.save()
+print(f"SVG saved as {output_svg}")

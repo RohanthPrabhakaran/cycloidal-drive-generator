@@ -1,0 +1,138 @@
+# Backup of cycloidal_generator.py
+# Date: 2025-09-17
+# Time: (please update with actual time if needed)
+# This is a backup of the original cycloidal_generator.py before algorithmic changes for optimal cycloidal drive parameter calculation.
+
+import numpy as np
+import matplotlib.pyplot as plt
+from shapely.geometry import LinearRing
+import math
+import ezdxf
+
+# =======================
+# Editable Parameters
+# =======================
+
+# Pin (outer ring) settings
+pin_circle_radius = 30     # mm, radius of circle on which pins are placed
+number_of_pins = 6            # total number of housing pins
+pin_diameter = 5             # mm, diameter of each pin
+
+# Cycloidal rotor profile settings
+ecc_factor = 0.6             # Eccentricity factor (fraction of rolling circle radius)
+samples = 4000                  # Curve resolution (more = smoother)
+
+# Center hole for eccentric bearing (in rotor)
+center_hole_percent = 0.30      # Fraction of rotor diameter
+
+# Output holes (inside rotor, for connection to output disk)
+output_hole_percent = 0.10      # Fraction of rotor diameter
+output_bolt_circle_percent = 0.6  # Fraction of rotor radius for bolt circle
+output_holes_count = None       # None = automatically set to N-1
+output_pin_angle_offset_deg = (360/(number_of_pins-1))/2 # Angular offset for output pins (degrees)
+
+# Visualization toggle
+draw_eccentric_offset = True    # Show eccentric bearing center offset from drive shaft center
+
+# =======================
+# Calculations
+# =======================
+
+rolling_circle_radius = pin_circle_radius / number_of_pins
+R = (number_of_pins - 1) * rolling_circle_radius
+E = ecc_factor * rolling_circle_radius
+Rr = pin_diameter / 2.0
+
+def rotor_param(R, E, Rr, N, t):
+    m = 1 - N
+    denom = (R / (E * N)) - np.cos(m * t)
+    safe_denom = np.where(np.abs(denom) < 1e-9, np.sign(denom) * 1e-9 + denom, denom)
+    ang = np.arctan2(np.sin(m * t), safe_denom)
+    x = R * np.cos(t) - Rr * np.cos(t + ang) - E * np.cos(N * t)
+    y = -R * np.sin(t) + Rr * np.sin(t + ang) + E * np.sin(N * t)
+    return x, y
+
+t_ext = np.linspace(np.deg2rad(-30.0), np.deg2rad(210.0), samples)
+x_ext, y_ext = rotor_param(R, E, Rr, number_of_pins, t_ext)
+
+crossings = np.where(np.diff(np.sign(y_ext)) != 0)[0]
+if len(crossings) >= 2:
+    start_idx = crossings[0]
+    end_idx = crossings[-1]
+else:
+    start_idx = 0
+    end_idx = len(t_ext) - 1
+
+half_x = x_ext[start_idx:end_idx + 1]
+half_y = y_ext[start_idx:end_idx + 1]
+half_pts = np.column_stack((half_x, half_y))
+mirrored_pts = np.column_stack((half_x[::-1], -half_y[::-1]))
+full_pts = np.vstack((half_pts, mirrored_pts[1:-1]))
+
+ring = LinearRing(full_pts)
+if not ring.is_ring:
+    full_pts = np.vstack((full_pts, full_pts[0]))
+
+radii = np.hypot(full_pts[:,0], full_pts[:,1])
+max_radius = float(np.max(radii))
+rotor_diameter = 2.0 * max_radius
+
+center_hole_d = center_hole_percent * rotor_diameter
+output_holes = output_holes_count if output_holes_count else max(1, number_of_pins - 1)
+output_hole_d = output_hole_percent * rotor_diameter
+output_bolt_radius = output_bolt_circle_percent * max_radius
+
+print(f"Rotor diameter: {rotor_diameter:.3f} mm")
+print(f"Center hole diameter: {center_hole_d:.3f} mm")
+print(f"Output holes: {output_holes} holes, {output_hole_d:.3f} mm diameter")
+print(f"Output bolt circle radius: {output_bolt_radius:.3f} mm")
+print(f"Eccentricity (E): {E:.3f} mm")
+print(f"Output pin angle offset: {output_pin_angle_offset_deg}°")
+
+# =======================
+# Plot
+# =======================
+
+fig, ax = plt.subplots(figsize=(8,8))
+ax.set_aspect('equal', 'box')
+ax.axis('off')
+ax.plot(half_pts[:,0], half_pts[:,1], '-r', linewidth=1.5)
+ax.plot(mirrored_pts[:,0], mirrored_pts[:,1], '-r', linewidth=1.5)
+
+# Housing pins
+for ang_deg in np.linspace(0, 360, num=number_of_pins, endpoint=False):
+    a = math.radians(ang_deg)
+    px = pin_circle_radius * math.cos(a)
+    py = pin_circle_radius * math.sin(a)
+    ax.add_patch(plt.Circle((px, py), pin_diameter/2.0, fill=False, color='gray', linewidth=0.8))
+
+# Center hole (in rotor center)
+ax.add_patch(plt.Circle((0,0), center_hole_d/2.0, fill=False, color='blue', linewidth=1.0))
+
+# Eccentric bearing position (offset from drive shaft center)
+if draw_eccentric_offset:
+    ax.plot(0, 0, 'ko', markersize=5)
+    ax.plot(E, 0, 'go', markersize=5)
+    ax.add_patch(plt.Circle((E, 0), center_hole_d/2.0, fill=False, color='green', linestyle='--'))
+
+# Output holes (with angle offset)
+for i in range(output_holes):
+    ang = math.radians(output_pin_angle_offset_deg + (360 / output_holes) * i)
+    ox = output_bolt_radius * math.cos(ang)
+    oy = output_bolt_radius * math.sin(ang)
+    ax.add_patch(plt.Circle((ox, oy), output_hole_d/2.0, fill=False, color='purple', linewidth=1.0))
+
+ax.plot([0],[0], marker='x', color='k')
+
+plt.legend()
+plt.legend()
+# Save the plot as a PNG file
+plt.savefig('output.png')
+plt.close()
+
+# Display the saved PNG using OpenCV
+import cv2
+img = cv2.imread('output.png')
+cv2.imshow('Saved Cycloidal Plot', img)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
