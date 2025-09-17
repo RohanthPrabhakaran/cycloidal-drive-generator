@@ -15,23 +15,30 @@ from tkinter import ttk
 import time
 
 # --- Core cycloidal drive logic as a function ---
-def generate_cycloidal(overall_diameter, number_of_pins, ecc_factor=0.6, auto_pin_size=True):
-    # Auto pin size logic: for low pin counts, increase pin diameter to avoid interference
+def generate_cycloidal(overall_diameter, number_of_pins, ecc_factor=0.6, auto_pin_size=True, adv_params=None):
+    # Use advanced parameters if provided
     min_pin_fraction = 0.10
     max_pin_fraction = 0.22  # never exceed this fraction of overall diameter
-    if auto_pin_size:
-        # For low pin counts, increase pin size up to max_pin_fraction
-        pin_fraction = min_pin_fraction + (max_pin_fraction - min_pin_fraction) * max(0, (10-number_of_pins)/10)
-        pin_diameter = pin_fraction * overall_diameter
-        pin_diameter = min(pin_diameter, max_pin_fraction * overall_diameter)
+    if adv_params:
+        pin_diameter = adv_params['pin_diameter'] if adv_params['pin_diameter'] > 0 else min_pin_fraction * overall_diameter
+        pin_circle_radius = adv_params['pin_circle_radius'] if adv_params['pin_circle_radius'] > 0 else (overall_diameter - pin_diameter) / 2.0
+        center_hole_percent = adv_params['center_hole_percent']
+        output_hole_percent = adv_params['output_hole_percent']
+        output_bolt_circle_percent = adv_params['output_bolt_circle_percent']
     else:
-        pin_diameter = min_pin_fraction * overall_diameter
-    pin_circle_radius = (overall_diameter - pin_diameter) / 2.0
+        if auto_pin_size:
+            # For low pin counts, increase pin size up to max_pin_fraction
+            pin_fraction = min_pin_fraction + (max_pin_fraction - min_pin_fraction) * max(0, (10-number_of_pins)/10)
+            pin_diameter = pin_fraction * overall_diameter
+            pin_diameter = min(pin_diameter, max_pin_fraction * overall_diameter)
+        else:
+            pin_diameter = min_pin_fraction * overall_diameter
+        pin_circle_radius = (overall_diameter - pin_diameter) / 2.0
+        center_hole_percent = 0.30
+        output_hole_percent = 0.10
+        output_bolt_circle_percent = 0.6
     inner_pins = number_of_pins - 1
     samples = 4000
-    center_hole_percent = 0.30
-    output_hole_percent = 0.10
-    output_bolt_circle_percent = 0.6
     output_holes_count = inner_pins
     output_pin_angle_offset_deg = (360/(output_holes_count))/2
 
@@ -172,6 +179,50 @@ class CycloidalGUI:
         # Auto Pin Size
         self.auto_pin_check = ttk.Checkbutton(self.frame, text="Auto Pin Size", variable=self.auto_pin_var)
         self.auto_pin_check.grid(row=5, column=0, columnspan=2, sticky="w")
+
+        # Advanced Options toggle
+        self.advanced_var = tk.BooleanVar(value=False)
+        self.advanced_check = ttk.Checkbutton(self.frame, text="Advanced Options", variable=self.advanced_var, command=self.toggle_advanced)
+        self.advanced_check.grid(row=5, column=2, columnspan=2, sticky="w")
+
+
+        # Advanced parameter variables
+        self.pin_diam_var = tk.DoubleVar(value=0.0)
+        self.pin_circle_radius_var = tk.DoubleVar(value=0.0)
+        self.center_hole_percent_var = tk.DoubleVar(value=0.30)
+        self.output_hole_percent_var = tk.DoubleVar(value=0.10)
+        self.output_bolt_circle_percent_var = tk.DoubleVar(value=0.6)
+
+        # Advanced parameter widgets (hidden by default)
+        self.advanced_widgets = []
+        row_advanced = 6
+        self.advanced_widgets.append(ttk.Label(self.frame, text="Pin Diameter (mm)"))
+        self.advanced_widgets[-1].grid(row=row_advanced, column=0, sticky="w")
+        self.advanced_widgets.append(ttk.Entry(self.frame, textvariable=self.pin_diam_var, width=8))
+        self.advanced_widgets[-1].grid(row=row_advanced, column=1)
+        self.advanced_widgets.append(ttk.Label(self.frame, text="Pin Circle Radius (mm)"))
+        self.advanced_widgets[-1].grid(row=row_advanced, column=2, sticky="w")
+        self.advanced_widgets.append(ttk.Entry(self.frame, textvariable=self.pin_circle_radius_var, width=8))
+        self.advanced_widgets[-1].grid(row=row_advanced, column=3)
+        row_advanced += 1
+        self.advanced_widgets.append(ttk.Label(self.frame, text="Center Hole %"))
+        self.advanced_widgets[-1].grid(row=row_advanced, column=0, sticky="w")
+        self.advanced_widgets.append(ttk.Entry(self.frame, textvariable=self.center_hole_percent_var, width=8))
+        self.advanced_widgets[-1].grid(row=row_advanced, column=1)
+        self.advanced_widgets.append(ttk.Label(self.frame, text="Output Hole %"))
+        self.advanced_widgets[-1].grid(row=row_advanced, column=2, sticky="w")
+        self.advanced_widgets.append(ttk.Entry(self.frame, textvariable=self.output_hole_percent_var, width=8))
+        self.advanced_widgets[-1].grid(row=row_advanced, column=3)
+        row_advanced += 1
+        self.advanced_widgets.append(ttk.Label(self.frame, text="Output Bolt Circle %"))
+        self.advanced_widgets[-1].grid(row=row_advanced, column=0, sticky="w")
+        self.advanced_widgets.append(ttk.Entry(self.frame, textvariable=self.output_bolt_circle_percent_var, width=8))
+        self.advanced_widgets[-1].grid(row=row_advanced, column=1)
+
+        # Hide advanced widgets by default
+        for widget in self.advanced_widgets:
+            widget.grid_remove()
+
         # Button
         self.refresh_btn = ttk.Button(self.frame, text="Generate & Preview", command=self.refresh)
         self.refresh_btn.grid(row=3, column=0, columnspan=4, pady=10)
@@ -182,6 +233,36 @@ class CycloidalGUI:
         self.time_label.grid(row=4, column=2, columnspan=2, sticky="e")
         self.frame.columnconfigure(1, weight=1)
         self.update_labels()
+
+    def toggle_advanced(self):
+        # When enabling advanced, populate fields with current auto values
+        if self.advanced_var.get():
+            # Calculate auto values
+            d = self.diam_var.get()
+            n = int(self.pins_var.get())
+            min_pin_fraction = 0.10
+            max_pin_fraction = 0.22
+            if self.auto_pin_var.get():
+                pin_fraction = min_pin_fraction + (max_pin_fraction - min_pin_fraction) * max(0, (10-n)/10)
+                pin_diameter = pin_fraction * d
+                pin_diameter = min(pin_diameter, max_pin_fraction * d)
+            else:
+                pin_diameter = min_pin_fraction * d
+            pin_circle_radius = (d - pin_diameter) / 2.0
+            center_hole_percent = 0.30
+            output_hole_percent = 0.10
+            output_bolt_circle_percent = 0.6
+            self.pin_diam_var.set(round(pin_diameter, 4))
+            self.pin_circle_radius_var.set(round(pin_circle_radius, 4))
+            self.center_hole_percent_var.set(center_hole_percent)
+            self.output_hole_percent_var.set(output_hole_percent)
+            self.output_bolt_circle_percent_var.set(output_bolt_circle_percent)
+        # Show/hide advanced widgets
+        for widget in self.advanced_widgets:
+            if self.advanced_var.get():
+                widget.grid()
+            else:
+                widget.grid_remove()
     def adjust(self, var, delta, vmin, vmax):
         val = var.get() + delta
         if isinstance(var, tk.IntVar):
@@ -196,9 +277,19 @@ class CycloidalGUI:
         n = int(self.pins_var.get())
         e = self.ecc_var.get()
         auto_pin = self.auto_pin_var.get()
+        advanced = self.advanced_var.get()
+        adv_params = None
+        if advanced:
+            adv_params = {
+                'pin_diameter': self.pin_diam_var.get(),
+                'pin_circle_radius': self.pin_circle_radius_var.get(),
+                'center_hole_percent': self.center_hole_percent_var.get(),
+                'output_hole_percent': self.output_hole_percent_var.get(),
+                'output_bolt_circle_percent': self.output_bolt_circle_percent_var.get(),
+            }
         self.status.config(text="Generating...")
         self.root.update_idletasks()
-        dxf_file, png_file = generate_cycloidal(d, n, e, auto_pin)
+        dxf_file, png_file = generate_cycloidal(d, n, e, auto_pin, adv_params)
         try:
             cv2.destroyAllWindows()
             img = cv2.imread(png_file)
