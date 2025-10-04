@@ -1,0 +1,34 @@
+# Git Repository Information
+
+Repository URL: https://github.com/RohanthPrabhakaran/cycloidal-drive-generator.git
+Branch: main
+
+# User Information
+GitHub Username: RohanthPrabhakaran
+
+# Common Git Commands
+
+# Clone the repository:
+git clone https://github.com/RohanthPrabhakaran/cycloidal-drive-generator.git
+
+# Change directory:
+cd cycloidal-drive-generator
+
+# Add all changes:
+git add .
+
+# Commit changes:
+git commit -m "Your commit message"
+
+# Push changes:
+git push origin main
+
+# Set user config (if needed):
+git config --global user.name "RohanthPrabhakaran"
+git config --global user.email "your-email@example.com"
+
+# To check remote:
+git remote -v
+
+# To set remote (if not set):
+git remote add origin https://github.com/RohanthPrabhakaran/cycloidal-drive-generator.git
